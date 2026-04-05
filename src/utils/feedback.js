@@ -1,8 +1,39 @@
-export function calculateFeedback({ patient, score, meta, criticalErrors, examState }) {
-  const anyHistoryInteraction =
-    meta.historyFatigue > 0 || meta.historyLocked || meta.lowPriorityHistoryCount > 0;
+const UNSAFE_NITRO_ERROR = "Nitroglycerin was prescribed unsafely.";
+const NITRO_COLLAPSE_ERROR = "The patient collapsed following unsafe nitroglycerin prescribing.";
+const FAILED_STABILIZATION_ERROR = "Failed to stabilize the patient.";
+const FAILED_STABILIZATION_COLLAPSE_ERROR =
+  "Failed to stabilize the patient and the patient collapsed.";
 
-  const distressRecognized = score.introduced || anyHistoryInteraction;
+export function calculateFeedback({
+  patient,
+  score,
+  meta,
+  criticalErrors,
+  examState,
+  historyState
+}) {
+  const totalHistoryQuestions = Object.values(historyState?.questionCounts || {}).reduce(
+    (sum, count) => sum + count,
+    0
+  );
+  const urgentActionStarted =
+    score.airwayChecked ||
+    score.breathingChecked ||
+    score.circulationChecked ||
+    score.monitoringRequested ||
+    score.ivRequested ||
+    score.oxygenGiven ||
+    score.analgesiaGiven ||
+    score.aspirinGiven ||
+    score.helpCalled ||
+    score.positionedPatient;
+  const prolongedHistoryBeforeUrgentAction =
+    meta.historyLocked ||
+    meta.historyFatigue >= 3 ||
+    meta.lowPriorityHistoryCount > 0 ||
+    totalHistoryQuestions >= 5;
+
+  const distressRecognized = urgentActionStarted && !prolongedHistoryBeforeUrgentAction;
 
   const managementStarted =
     score.monitoringRequested ||
@@ -29,35 +60,15 @@ export function calculateFeedback({ patient, score, meta, criticalErrors, examSt
   const focusedExamComplete =
     score.generalChecked && (score.breathingChecked || score.circulationChecked);
 
-  const safeNitro =
-    score.nitroGiven === 0 || (score.nitroGiven > 0 && patient.bp >= 90);
+  const hasNitroCriticalError = criticalErrors.some(
+    (item) => item === UNSAFE_NITRO_ERROR || item === NITRO_COLLAPSE_ERROR
+  );
+  const safeNitro = score.nitroGiven === 0 || !hasNitroCriticalError;
 
-  const lowPriorityHistoryThreshold = 1;
   const highHistoryFatigue = meta.historyFatigue >= 3;
-
-  const derivedCriticalErrors = [...criticalErrors];
-
-  function addDerivedCriticalError(text) {
-    if (!derivedCriticalErrors.includes(text)) {
-      derivedCriticalErrors.push(text);
-    }
-  }
-
-  if (score.nitroGiven > 0 && patient.bp < 90) {
-    addDerivedCriticalError("Nitroglycerin was given when systolic blood pressure was below 90 mmHg.");
-  }
-
-  if (score.nitroGiven > 0 && patient.bp <= 70) {
-    addDerivedCriticalError("Nitroglycerin caused or contributed to severe hypotension with systolic blood pressure at or below 70 mmHg.");
-  }
-
-  if (meta.deteriorationSteps > 0) {
-    addDerivedCriticalError("Prolonged non-urgent actions before stabilization caused patient deterioration.");
-  }
-
-  if (score.oxygenGiven && patient.bp <= 70) {
-    addDerivedCriticalError("Oxygen was given during severe circulatory collapse with systolic blood pressure at or below 70 mmHg.");
-  }
+  const significantDeterioration = meta.deteriorationSteps >= 3;
+  const oxygenMisuse = score.oxygenGiven && patient.bp <= 70;
+  const safetyCriticalErrors = criticalErrors;
 
   const checklist = [
     { label: "Introduced self", met: score.introduced },
@@ -100,7 +111,7 @@ export function calculateFeedback({ patient, score, meta, criticalErrors, examSt
   });
 
   let outcome = "Optimal";
-  if (derivedCriticalErrors.length > 0) {
+  if (safetyCriticalErrors.length > 0) {
     outcome = "Unsafe";
   } else if (metCount < Math.ceil(checklist.length * 0.7)) {
     outcome = "Suboptimal";
@@ -126,13 +137,19 @@ export function calculateFeedback({ patient, score, meta, criticalErrors, examSt
     );
   }
 
-  if (meta.lowPriorityHistoryCount > lowPriorityHistoryThreshold) {
+  if (meta.lowPriorityHistoryCount > 0) {
     teachingPoints.push(
       "Some early questions drifted away from the highest-yield urgent history points before the patient had been stabilised."
     );
   }
 
-  if (score.oxygenGiven && patient.bp <= 70) {
+  if (significantDeterioration) {
+    teachingPoints.push(
+      "Prolonged non-urgent actions before stabilization contributed to patient deterioration."
+    );
+  }
+
+  if (oxygenMisuse) {
     teachingPoints.push(
       "Oxygen was given during severe circulatory collapse, when the immediate priority should have been hemodynamic stabilization."
     );
@@ -167,7 +184,11 @@ export function calculateFeedback({ patient, score, meta, criticalErrors, examSt
   if (!score.ecgRequested) missedActions.push("ECG was missed or severely delayed.");
   if (!score.reassuredPatient) missedActions.push("Patient reassurance was missed.");
   if (!score.monitoringRequested) missedActions.push("Monitoring request was missed.");
-  if (!stabilizationComplete) {
+  if (
+    !stabilizationComplete &&
+    !criticalErrors.includes(FAILED_STABILIZATION_ERROR) &&
+    !criticalErrors.includes(FAILED_STABILIZATION_COLLAPSE_ERROR)
+  ) {
     missedActions.push("The full stabilization bundle was not completed.");
   }
 
@@ -219,10 +240,10 @@ export function calculateFeedback({ patient, score, meta, criticalErrors, examSt
     },
     {
       label: "Safety",
-      score: derivedCriticalErrors.length === 0 ? 2 : 0,
+      score: safetyCriticalErrors.length === 0 ? 2 : 0,
       total: 2,
       criteria: [
-        { label: "No critical errors from unsafe treatments or deterioration", met: derivedCriticalErrors.length === 0 }
+        { label: "No critical errors from unsafe treatment or failed stabilization", met: safetyCriticalErrors.length === 0 }
       ]
     },
     {

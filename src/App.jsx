@@ -22,6 +22,12 @@ import {
 } from "./utils/patientUtils";
 import { calculateFeedback } from "./utils/feedback";
 
+const UNSAFE_NITRO_ERROR = "Nitroglycerin was prescribed unsafely.";
+const NITRO_COLLAPSE_ERROR = "The patient collapsed following unsafe nitroglycerin prescribing.";
+const FAILED_STABILIZATION_ERROR = "Failed to stabilize the patient.";
+const FAILED_STABILIZATION_COLLAPSE_ERROR =
+  "Failed to stabilize the patient and the patient collapsed.";
+
 export default function App() {
   const [screen, setScreen] = useState("menu");
   const [log, setLog] = useState([]);
@@ -38,11 +44,42 @@ export default function App() {
     setLog((prev) => [...prev, text]);
   }
 
-  function addCriticalError(text) {
+  function addCriticalError(text, options = {}) {
+    const { replace = [] } = options;
     setCriticalErrors((prev) => {
-      if (prev.includes(text)) return prev;
-      return [...prev, text];
+      const filtered = prev.filter((item) => !replace.includes(item));
+      if (filtered.includes(text)) return filtered;
+      return [...filtered, text];
     });
+  }
+
+  function hasCompletedStabilization(scoreState) {
+    return (
+      scoreState.monitoringRequested &&
+      scoreState.ivRequested &&
+      scoreState.aspirinGiven &&
+      scoreState.analgesiaGiven &&
+      scoreState.helpCalled &&
+      scoreState.positionedPatient
+    );
+  }
+
+  function finalizeCriticalErrors(existingErrors) {
+    const nextErrors = existingErrors.filter(
+      (item) =>
+        item !== FAILED_STABILIZATION_ERROR &&
+        item !== FAILED_STABILIZATION_COLLAPSE_ERROR
+    );
+
+    if (!hasCompletedStabilization(score)) {
+      if (patient.bp <= 70) {
+        nextErrors.push(FAILED_STABILIZATION_COLLAPSE_ERROR);
+      } else {
+        nextErrors.push(FAILED_STABILIZATION_ERROR);
+      }
+    }
+
+    return nextErrors;
   }
 
   function logStabilizationIfNeeded(nextScore) {
@@ -265,10 +302,11 @@ export default function App() {
   function giveNitroglycerin() {
     const nextDose = score.nitroGiven + 1;
 
-    if (patient.bp <= 40) {
+    if (patient.bp <= 70) {
       setScore((prev) => ({ ...prev, nitroGiven: prev.nitroGiven + 1 }));
+      addCriticalError(UNSAFE_NITRO_ERROR);
       addLog(
-        `Nitroglycerin dose ${nextDose}: BP is 40 mmHg. The patient has already collapsed. No further meaningful effect is demonstrated.`
+        `Nitroglycerin dose ${nextDose}: BP is ${patient.bp} mmHg. The patient has already collapsed. No further meaningful effect is demonstrated.`
       );
       return;
     }
@@ -279,7 +317,7 @@ export default function App() {
     if (patient.bp < 90) {
       dropMin = 25;
       dropMax = 45;
-      addCriticalError("Nitroglycerin was given despite hypotension.");
+      addCriticalError(UNSAFE_NITRO_ERROR);
     } else if (nextDose === 1) {
       dropMin = 8;
       dropMax = 15;
@@ -292,6 +330,7 @@ export default function App() {
     } else {
       dropMin = 3;
       dropMax = 8;
+      addCriticalError(UNSAFE_NITRO_ERROR);
     }
 
     const drop = Math.floor(Math.random() * (dropMax - dropMin + 1)) + dropMin;
@@ -311,7 +350,7 @@ export default function App() {
     setScore((prev) => ({ ...prev, nitroGiven: prev.nitroGiven + 1 }));
 
     if (prevBP > 70 && newBP <= 70) {
-      addCriticalError("Nitroglycerin led to severe hypotension and collapse.");
+      addCriticalError(NITRO_COLLAPSE_ERROR, { replace: [UNSAFE_NITRO_ERROR] });
       addLog(
         `Nitroglycerin dose ${nextDose}: BP fell to ${newBP} mmHg. The patient has collapsed following severe hypotension.`
       );
@@ -502,7 +541,14 @@ export default function App() {
     addLog(`${source}: ${finding}`);
   }
 
-  const feedback = calculateFeedback({ patient, score, meta, criticalErrors, examState });
+  const feedback = calculateFeedback({
+    patient,
+    score,
+    meta,
+    criticalErrors,
+    examState,
+    historyState
+  });
 
   const actions = {
     introduce,
@@ -548,6 +594,7 @@ export default function App() {
         actions={actions}
         onEndStation={(data) => {
           setReplayData(data);
+          setCriticalErrors((prev) => finalizeCriticalErrors(prev));
           setScreen("feedback");
         }}
       />
