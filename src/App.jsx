@@ -203,6 +203,15 @@ export default function App() {
     addLog("IV access requested.");
   }
 
+  function requireIVAccess(actionLabel) {
+    if (score.ivRequested) {
+      return true;
+    }
+
+    addLog(`IV access is not established. Establish IV access before ${actionLabel}.`);
+    return false;
+  }
+
   function giveOxygen() {
     if (!score.oxygenGiven) {
       setScore((prev) => ({ ...prev, oxygenGiven: true }));
@@ -276,6 +285,10 @@ export default function App() {
   }
 
   function giveAnalgesia() {
+    if (!requireIVAccess("giving analgesia")) {
+      return;
+    }
+
     if (score.analgesiaGiven) {
       addLog("Additional analgesia given. Limited further benefit.");
       return;
@@ -288,6 +301,10 @@ export default function App() {
   }
 
   function giveAspirin() {
+    if (!requireIVAccess("giving aspirin")) {
+      return;
+    }
+
     if (score.aspirinGiven) {
       addLog("Aspirin has already been given.");
       return;
@@ -300,6 +317,10 @@ export default function App() {
   }
 
   function giveNitroglycerin() {
+    if (!requireIVAccess("giving nitroglycerin")) {
+      return;
+    }
+
     const nextDose = score.nitroGiven + 1;
 
     if (patient.bp <= 70) {
@@ -392,6 +413,10 @@ export default function App() {
   }
 
   function requestBloods() {
+    if (!requireIVAccess("requesting blood tests")) {
+      return;
+    }
+
     if (score.bloodsRequested) {
       addLog("Blood tests have already been requested.");
       return;

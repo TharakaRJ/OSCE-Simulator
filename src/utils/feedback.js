@@ -63,7 +63,7 @@ export function calculateFeedback({
   const hasNitroCriticalError = criticalErrors.some(
     (item) => item === UNSAFE_NITRO_ERROR || item === NITRO_COLLAPSE_ERROR
   );
-  const safeNitro = score.nitroGiven === 0 || !hasNitroCriticalError;
+  const safeNitro = !hasNitroCriticalError;
 
   const highHistoryFatigue = meta.historyFatigue >= 3;
   const significantDeterioration = meta.deteriorationSteps >= 3;
@@ -98,7 +98,7 @@ export function calculateFeedback({
     }
   }
 
-  if (score.nitroGiven > 0) {
+  if (score.nitroGiven > 0 || hasNitroCriticalError) {
     checklist.push({
       label: "Used nitroglycerin safely",
       met: safeNitro

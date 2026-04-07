@@ -55,10 +55,15 @@ function getPatientImage({
   isTakingHistory,
   isPositioned,
   isExamining,
-  isAuscultating
+  isAuscultating,
+  showPositioningTransition
 }) {
   if (isCollapsed) {
     return collapsedImage;
+  }
+
+  if (showPositioningTransition) {
+    return semiRecumbentImage;
   }
 
   if (isStabilized) {
@@ -222,6 +227,7 @@ export function SimulationScreen({
   const [activePanel, setActivePanel] = useState(null);
   const [investigationsOpen, setInvestigationsOpen] = useState(false);
   const [examImageMode, setExamImageMode] = useState(null);
+  const [showPositioningTransition, setShowPositioningTransition] = useState(false);
 
   const [communication, setCommunication] = useState([]);
   const [clinicalUpdates, setClinicalUpdates] = useState([]);
@@ -229,6 +235,7 @@ export function SimulationScreen({
   const commFeedRef = useRef(null);
   const updatesFeedRef = useRef(null);
   const prevLogLengthRef = useRef(0);
+  const positioningTimerRef = useRef(null);
 
   function addCommunication(speaker, line) {
     setCommunication((prev) => [...prev, { speaker, line }]);
@@ -249,6 +256,12 @@ export function SimulationScreen({
       updatesFeedRef.current.scrollTop = updatesFeedRef.current.scrollHeight;
     }
   }, [clinicalUpdates]);
+
+  useEffect(() => () => {
+    if (positioningTimerRef.current) {
+      clearTimeout(positioningTimerRef.current);
+    }
+  }, []);
 
   // Watch log for new system events
   useEffect(() => {
@@ -271,6 +284,20 @@ export function SimulationScreen({
     const isAuscultationAction = item.id === "resp_ausc" || item.id === "cv_heart";
     setExamImageMode(isAuscultationAction ? "auscultation" : "exam");
     actions.performExam(item, source);
+  }
+
+  function handlePositionPatient() {
+    if (positioningTimerRef.current) {
+      clearTimeout(positioningTimerRef.current);
+    }
+
+    setShowPositioningTransition(true);
+    positioningTimerRef.current = setTimeout(() => {
+      setShowPositioningTransition(false);
+      positioningTimerRef.current = null;
+    }, 1000);
+
+    actions.positionPatient();
   }
 
   function handleIntroduce() {
@@ -329,8 +356,14 @@ export function SimulationScreen({
     isTakingHistory,
     isPositioned: score.positionedPatient,
     isExamining,
-    isAuscultating
+    isAuscultating,
+    showPositioningTransition
   });
+
+  const procedureActions = {
+    ...actions,
+    positionPatient: handlePositionPatient
+  };
 
   return (
     <div style={{ ...styles.page, display: "flex", flexDirection: "column", height: "100vh", minHeight: "100vh", overflow: "hidden" }}>
@@ -458,7 +491,7 @@ export function SimulationScreen({
           )}
 
           {activePanel === "procedure" && (
-            <ProcedureDrawer actions={actions} onClose={() => setActivePanel(null)} />
+            <ProcedureDrawer actions={procedureActions} onClose={() => setActivePanel(null)} />
           )}
         </div>
 
