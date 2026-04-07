@@ -53,7 +53,6 @@ function getPatientImage({
   isStabilized,
   isCollapsed,
   isTakingHistory,
-  isPositioned,
   isExamining,
   isAuscultating,
   showPositioningTransition
@@ -87,10 +86,6 @@ function getPatientImage({
     if (hasMonitoring) return monitoringOxygenImage;
     if (hasIV) return ivOxygenOnlyImage;
     return oxygenOnlyImage;
-  }
-
-  if (isPositioned) {
-    return semiRecumbentImage;
   }
 
   if (hasMonitoring && hasIV) {
@@ -276,21 +271,29 @@ export function SimulationScreen({
   }, [log]);
 
   function togglePanel(panelName) {
+    clearPositioningTransition();
     setExamImageMode(null);
     setActivePanel((prev) => (prev === panelName ? null : panelName));
   }
 
+  function clearPositioningTransition() {
+    if (positioningTimerRef.current) {
+      clearTimeout(positioningTimerRef.current);
+      positioningTimerRef.current = null;
+    }
+
+    setShowPositioningTransition(false);
+  }
+
   function handlePerformExam(item, source = "Exam") {
+    clearPositioningTransition();
     const isAuscultationAction = item.id === "resp_ausc" || item.id === "cv_heart";
     setExamImageMode(isAuscultationAction ? "auscultation" : "exam");
     actions.performExam(item, source);
   }
 
   function handlePositionPatient() {
-    if (positioningTimerRef.current) {
-      clearTimeout(positioningTimerRef.current);
-    }
-
+    clearPositioningTransition();
     setShowPositioningTransition(true);
     positioningTimerRef.current = setTimeout(() => {
       setShowPositioningTransition(false);
@@ -354,7 +357,6 @@ export function SimulationScreen({
     isStabilized,
     isCollapsed,
     isTakingHistory,
-    isPositioned: score.positionedPatient,
     isExamining,
     isAuscultating,
     showPositioningTransition
@@ -362,6 +364,42 @@ export function SimulationScreen({
 
   const procedureActions = {
     ...actions,
+    requestMonitoring: () => {
+      clearPositioningTransition();
+      actions.requestMonitoring();
+    },
+    requestIVAccess: () => {
+      clearPositioningTransition();
+      actions.requestIVAccess();
+    },
+    giveAspirin: () => {
+      clearPositioningTransition();
+      actions.giveAspirin();
+    },
+    giveAnalgesia: () => {
+      clearPositioningTransition();
+      actions.giveAnalgesia();
+    },
+    giveOxygen: () => {
+      clearPositioningTransition();
+      actions.giveOxygen();
+    },
+    giveNitroglycerin: () => {
+      clearPositioningTransition();
+      actions.giveNitroglycerin();
+    },
+    requestECG: () => {
+      clearPositioningTransition();
+      actions.requestECG();
+    },
+    requestBloods: () => {
+      clearPositioningTransition();
+      actions.requestBloods();
+    },
+    callForHelp: () => {
+      clearPositioningTransition();
+      actions.callForHelp();
+    },
     positionPatient: handlePositionPatient
   };
 
